@@ -5,16 +5,16 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const cors = require('cors'); 
 
-// 1. CONFIGURACIÓN DE LA APP (El orden aquí es sagrado)
+// 1. CONFIGURACIÓN DE LA APP
 const app = express(); 
 
-// 2. PERMISOS Y MIDDLEWARES
+// 2. PERMISOS Y MIDDLEWARES (Fundamental para el buscador web)
 app.use(express.json());
-app.use(cors()); // Esto permite que tu buscador web se conecte
+app.use(cors()); 
 
-// 3. CONEXIÓN A MONGODB (Atlas en la nube)
+// 3. CONEXIÓN A MONGODB ATLAS
 mongoose.connect(process.env.MONGO_URI)
-    .then(() => console.log("✅ Servidor conectado a la Base de Datos en la Nube"))
+    .then(() => console.log("✅ Servidor conectado a MongoDB Atlas (NUBE)"))
     .catch(err => console.log("❌ Error de conexión a Mongo:", err));
 
 // 4. MODELOS DE DATOS
@@ -32,73 +32,76 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// 5. MIDDLEWARE DE SEGURIDAD (Validar API KEY)
+// 5. MIDDLEWARE DE SEGURIDAD
 const validarApiKey = async (req, res, next) => {
-    const apiKey = req.headers['x-api-key'];
-    if (!apiKey) return res.status(401).json({ error: 'API KEY requerida' });
+    try {
+        const apiKey = req.headers['x-api-key'];
+        if (!apiKey) return res.status(401).json({ error: 'API KEY requerida' });
 
-    const user = await User.findOne({ apiKey });
-    if (!user) return res.status(403).json({ error: 'API KEY inválida' });
-    
-    req.user = user;
-    next();
+        const user = await User.findOne({ apiKey });
+        if (!user) return res.status(403).json({ error: 'API KEY inválida' });
+        
+        req.user = user;
+        next();
+    } catch (error) {
+        res.status(500).json({ error: 'Error de seguridad' });
+    }
 };
 
-// 6. RUTAS DE LA API
-app.get('/api/ruc/:ruc', validarApiKey, async (req, res) => { // <--- FÍJATE EN ESTE 'async'
+// 6. RUTAS DE LA API (CORREGIDA CON ASYNC/AWAIT)
+app.get('/api/ruc/:ruc', validarApiKey, async (req, res) => {
     const { ruc } = req.params;
 
     try {
-        // 1. Revisar caché en Atlas
+        // 1. Revisar si ya está en tu Base de Datos (Atlas)
         const cache = await Consulta.findOne({ ruc });
         if (cache) return res.json({ source: 'CACHE_LOCAL', data: cache.data });
 
-        // 2. Consultar al SRI Real (Endpoint público)
+        // 2. Consultar al SRI Real (Endpoint público oficial)
         const url = `https://srienlinea.sri.gob.ec/sri-en-linea/rest/ConsultasGenerales/obtenerPorRuc?numeroRuc=${ruc}`;
         const response = await axios.get(url);
         
-        // Estructurar los datos reales que vienen del SRI
+        if (!response.data || !response.data.razonSocial) {
+            return res.status(404).json({ error: 'RUC no encontrado en el SRI' });
+        }
+
+        // Estructurar los datos reales
         const nuevaData = {
             ruc: ruc,
-            razonSocial: response.data.razonSocial || "Nombre no encontrado",
+            razonSocial: response.data.razonSocial,
             estado: response.data.estadoContribuyente || "ACTIVO",
             mensaje: "Datos reales del SRI obtenidos por BIG SOLUTIONS"
         };
 
-        // 3. Guardar en BD para futuras consultas
-        await new Consulta({ ruc, data: nuevaData }).save();
+        // 3. Guardar en tu Base de Datos para futuras consultas
+        const nuevaConsulta = new Consulta({ ruc, data: nuevaData });
+        await nuevaConsulta.save();
 
         res.json({ source: 'SRI_LIVE', data: nuevaData });
 
     } catch (error) {
         console.error("Error en consulta:", error.message);
-        res.status(500).json({ error: 'RUC no encontrado o SRI fuera de servicio' });
+        res.status(500).json({ error: 'El SRI no responde. Intente más tarde.' });
     }
 });
 
-        // 3. Guardar en BD para la próxima vez
-        await new Consulta({ ruc, data: nuevaData }).save();
-
-        res.json({ source: 'SRI_LIVE', data: nuevaData });
-
-    } catch (error) {
-        res.status(500).json({ error: 'Error al consultar el SRI' });
-    }
-});
-
-// Ruta para crear usuarios (y generar API Keys)
+// Ruta para crear usuarios (API Keys)
 app.post('/crear-usuario', async (req, res) => {
-    const { nombre, consultas } = req.body;
-    const apiKey = Math.random().toString(36).substring(2, 12);
-    
-    const nuevoUsuario = new User({
-        apiKey,
-        nombre,
-        consultasRestantes: consultas || 10
-    });
+    try {
+        const { nombre, consultas } = req.body;
+        const apiKey = Math.random().toString(36).substring(2, 12);
+        
+        const nuevoUsuario = new User({
+            apiKey,
+            nombre,
+            consultasRestantes: consultas || 50
+        });
 
-    await nuevoUsuario.save();
-    res.json({ mensaje: 'Usuario creado', apiKey });
+        await nuevoUsuario.save();
+        res.json({ mensaje: 'Usuario creado con éxito', apiKey });
+    } catch (error) {
+        res.status(500).json({ error: 'No se pudo crear el usuario' });
+    }
 });
 
 // 7. ENCENDER EL SERVIDOR
