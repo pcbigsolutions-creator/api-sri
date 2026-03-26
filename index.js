@@ -45,35 +45,34 @@ const validarApiKey = async (req, res, next) => {
 };
 
 // 6. RUTAS DE LA API
-// Ruta para consultar RUC
-app.get('/api/ruc/:ruc', validarApiKey, async (req, res) => {
+app.get('/api/ruc/:ruc', validarApiKey, async (req, res) => { // <--- FÍJATE EN ESTE 'async'
     const { ruc } = req.params;
 
     try {
-        // 1. Primero revisamos si ya lo consultamos antes (Cache)
+        // 1. Revisar caché en Atlas
         const cache = await Consulta.findOne({ ruc });
         if (cache) return res.json({ source: 'CACHE_LOCAL', data: cache.data });
 
-        // 2. Si no está, vamos a "raspar" el SRI
+        // 2. Consultar al SRI Real (Endpoint público)
         const url = `https://srienlinea.sri.gob.ec/sri-en-linea/rest/ConsultasGenerales/obtenerPorRuc?numeroRuc=${ruc}`;
         const response = await axios.get(url);
         
-        // Estructuramos la data real
+        // Estructurar los datos reales que vienen del SRI
         const nuevaData = {
             ruc: ruc,
             razonSocial: response.data.razonSocial || "Nombre no encontrado",
             estado: response.data.estadoContribuyente || "ACTIVO",
-            mensaje: "Datos reales del SRI"
+            mensaje: "Datos reales del SRI obtenidos por BIG SOLUTIONS"
         };
 
-        // 3. Guardamos en la Base de Datos de Atlas para que la próxima sea instantánea
+        // 3. Guardar en BD para futuras consultas
         await new Consulta({ ruc, data: nuevaData }).save();
 
         res.json({ source: 'SRI_LIVE', data: nuevaData });
 
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'El SRI está demorando en responder o el RUC es inválido' });
+        console.error("Error en consulta:", error.message);
+        res.status(500).json({ error: 'RUC no encontrado o SRI fuera de servicio' });
     }
 });
 
