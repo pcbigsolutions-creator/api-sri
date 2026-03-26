@@ -114,7 +114,15 @@ app.post('/crear-usuario', async (req, res) => {
         res.status(500).json({ error: 'Error' });
     }
 });
-
+// 🔥 RUTA PARA LIMPIAR TODA LA CACHÉ (Memoria del buscador)
+app.get('/admin/borrar-todo-big-solutions', async (req, res) => {
+    try {
+        await Consulta.deleteMany({}); // Esto vacía la colección en Atlas
+        res.send("<h1>🔥 Memoria Limpiada</h1><p>Todas las consultas guardadas han sido eliminadas de Atlas.</p>");
+    } catch (error) {
+        res.status(500).send("Error al limpiar la base de datos");
+    }
+});
 // 7. ENCENDER EL SERVIDOR
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Sistema BIG SOLUTIONS PC activo en puerto ${PORT}`));
