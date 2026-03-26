@@ -2,13 +2,12 @@ require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const axios = require('axios');
-const cheerio = require('cheerio');
 const cors = require('cors'); 
 
 // 1. CONFIGURACIÓN DE LA APP
 const app = express(); 
 
-// 2. PERMISOS Y MIDDLEWARES (Fundamental para el buscador web)
+// 2. PERMISOS Y MIDDLEWARES
 app.use(express.json());
 app.use(cors()); 
 
@@ -48,72 +47,55 @@ const validarApiKey = async (req, res, next) => {
     }
 };
 
-// 6. RUTAS DE LA API (CORREGIDA CON ASYNC/AWAIT)
+// 6. RUTA DE CONSULTA (VERSION ROBUSTA PARA EL SRI)
 app.get('/api/ruc/:ruc', validarApiKey, async (req, res) => {
     const { ruc } = req.params;
 
     try {
-        // 1. Revisar si ya está en tu Base de Datos (Atlas)
+        // 1. Revisar caché en Atlas
         const cache = await Consulta.findOne({ ruc });
         if (cache) return res.json({ source: 'CACHE_LOCAL', data: cache.data });
 
-        // 2. Consultar al SRI Real (Endpoint público oficial)
-        // 2. Consultar al SRI Real
-       const url = `https://srienlinea.sri.gob.ec/sri-en-linea/rest/Persona/obtenerPorRuc?numeroRuc=${ruc}`;
+        // 2. Consultar al SRI (Ruta de Persona/obtenerPorRuc es más estable)
+        const url = `https://srienlinea.sri.gob.ec/sri-en-linea/rest/Persona/obtenerPorRuc?numeroRuc=${ruc}`;
         
-        try {
-            const response = await axios.get(url, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': 'application/json'
-                },
-                timeout: 5000 // Si el SRI no responde en 5 segundos, salta error
-            });
+        const response = await axios.get(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'application/json, text/plain, */*',
+                'Origin': 'https://srienlinea.sri.gob.ec',
+                'Referer': 'https://srienlinea.sri.gob.ec/'
+            },
+            timeout: 8000
+        });
 
-            if (!response.data || !response.data.razonSocial) {
-                return res.status(404).json({ error: 'El RUC no existe en los registros oficiales.' });
-            }
-
-            const nuevaData = {
-                ruc: ruc,
-                razonSocial: response.data.razonSocial,
-                estado: response.data.estadoContribuyente || "ACTIVO",
-                mensaje: "Datos reales del SRI"
-            };
-
-            await new Consulta({ ruc, data: nuevaData }).save();
-            res.json({ source: 'SRI_LIVE', data: nuevaData });
-
-        } catch (axiosError) {
-            // Esto nos dirá en los LOGS de Render si es un bloqueo o un error de red
-            console.error("Detalle del error:", axiosError.response ? axiosError.response.status : axiosError.message);
-            return res.status(500).json({ 
-                error: 'El SRI bloqueó la conexión o está fuera de servicio.',
-                detalle: axiosError.message 
-            });
+        // Verificamos si hay datos reales
+        if (!response.data || (!response.data.razonSocial && !response.data.nombreCompleto)) {
+            return res.status(404).json({ error: 'RUC no encontrado o SRI bloqueó la conexión.' });
         }
 
-        // Estructurar los datos reales
+        // Algunos vienen como razonSocial y otros como nombreCompleto
+        const nombreFinal = response.data.razonSocial || response.data.nombreCompleto;
+
         const nuevaData = {
             ruc: ruc,
-            razonSocial: response.data.razonSocial,
-            estado: response.data.estadoContribuyente || "ACTIVO",
-            mensaje: "Datos reales del SRI obtenidos por BIG SOLUTIONS"
+            razonSocial: nombreFinal,
+            estado: response.data.estadoPersona || "ACTIVO",
+            mensaje: "Consulta exitosa - BIG SOLUTIONS PC"
         };
 
-        // 3. Guardar en tu Base de Datos para futuras consultas
-        const nuevaConsulta = new Consulta({ ruc, data: nuevaData });
-        await nuevaConsulta.save();
+        // 3. Guardar en BD para no volver a molestar al SRI con el mismo RUC
+        await new Consulta({ ruc, data: nuevaData }).save();
 
         res.json({ source: 'SRI_LIVE', data: nuevaData });
 
     } catch (error) {
-        console.error("Error en consulta:", error.message);
-        res.status(500).json({ error: 'El SRI no responde. Intente más tarde.' });
+        console.error("Error en el servidor:", error.message);
+        res.status(500).json({ error: 'El SRI no responde. Intente de nuevo en unos segundos.' });
     }
 });
 
-// Ruta para crear usuarios (API Keys)
+// Ruta para crear usuarios
 app.post('/crear-usuario', async (req, res) => {
     try {
         const { nombre, consultas } = req.body;
@@ -122,18 +104,18 @@ app.post('/crear-usuario', async (req, res) => {
         const nuevoUsuario = new User({
             apiKey,
             nombre,
-            consultasRestantes: consultas || 50
+            consultasRestantes: consultas || 100
         });
 
         await nuevoUsuario.save();
-        res.json({ mensaje: 'Usuario creado con éxito', apiKey });
+        res.json({ mensaje: 'Usuario creado', apiKey });
     } catch (error) {
-        res.status(500).json({ error: 'No se pudo crear el usuario' });
+        res.status(500).json({ error: 'Error al crear usuario' });
     }
 });
 
 // 7. ENCENDER EL SERVIDOR
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`🚀 API de BIG SOLUTIONS corriendo en puerto ${PORT}`);
+    console.log(`🚀 Servidor de BIG SOLUTIONS activo en puerto ${PORT}`);
 });
