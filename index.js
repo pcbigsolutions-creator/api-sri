@@ -59,7 +59,7 @@ app.get('/api/ruc/:ruc', validarApiKey, async (req, res) => {
 
         // 2. Consultar al SRI Real (Endpoint público oficial)
         // 2. Consultar al SRI Real
-        const url = `https://srienlinea.sri.gob.ec/sri-en-linea/rest/ConsultasGenerales/obtenerPorRuc?numeroRuc=${ruc}`;
+       const url = `https://srienlinea.sri.gob.ec/sri-en-linea/rest/Persona/obtenerPorRuc?numeroRuc=${ruc}`;
         
         try {
             const response = await axios.get(url, {
