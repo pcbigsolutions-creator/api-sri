@@ -50,20 +50,32 @@ app.get('/api/ruc/:ruc', validarApiKey, async (req, res) => {
     const { ruc } = req.params;
 
     try {
-        // 1. Buscar en base de datos propia primero
+        // 1. Primero revisamos si ya lo consultamos antes (Cache)
         const cache = await Consulta.findOne({ ruc });
-        if (cache) {
-            return res.json({ source: 'CACHE_LOCAL', data: cache.data });
-        }
+        if (cache) return res.json({ source: 'CACHE_LOCAL', data: cache.data });
 
-        // 2. Si no está, consultar al "SRI" (Simulado con lógica de scraping)
-        // Aquí va tu lógica de axios y cheerio que ya tenías
+        // 2. Si no está, vamos a "raspar" el SRI
+        const url = `https://srienlinea.sri.gob.ec/sri-en-linea/rest/ConsultasGenerales/obtenerPorRuc?numeroRuc=${ruc}`;
+        const response = await axios.get(url);
+        
+        // Estructuramos la data real
         const nuevaData = {
             ruc: ruc,
-            razonSocial: "CONSULTA EXITOSA - BIG SOLUTIONS",
-            estado: "ACTIVO",
-            mensaje: "Datos obtenidos correctamente"
+            razonSocial: response.data.razonSocial || "Nombre no encontrado",
+            estado: response.data.estadoContribuyente || "ACTIVO",
+            mensaje: "Datos reales del SRI"
         };
+
+        // 3. Guardamos en la Base de Datos de Atlas para que la próxima sea instantánea
+        await new Consulta({ ruc, data: nuevaData }).save();
+
+        res.json({ source: 'SRI_LIVE', data: nuevaData });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'El SRI está demorando en responder o el RUC es inválido' });
+    }
+});
 
         // 3. Guardar en BD para la próxima vez
         await new Consulta({ ruc, data: nuevaData }).save();
