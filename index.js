@@ -58,15 +58,39 @@ app.get('/api/ruc/:ruc', validarApiKey, async (req, res) => {
         if (cache) return res.json({ source: 'CACHE_LOCAL', data: cache.data });
 
         // 2. Consultar al SRI Real (Endpoint público oficial)
+        // 2. Consultar al SRI Real
         const url = `https://srienlinea.sri.gob.ec/sri-en-linea/rest/ConsultasGenerales/obtenerPorRuc?numeroRuc=${ruc}`;
-       const response = await axios.get(url, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            }
-        }); // <--- AQUÍ: fíjate que tiene el }); al final
         
-        if (!response.data || !response.data.razonSocial) {
-            return res.status(404).json({ error: 'RUC no encontrado en el SRI' });
+        try {
+            const response = await axios.get(url, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'application/json'
+                },
+                timeout: 5000 // Si el SRI no responde en 5 segundos, salta error
+            });
+
+            if (!response.data || !response.data.razonSocial) {
+                return res.status(404).json({ error: 'El RUC no existe en los registros oficiales.' });
+            }
+
+            const nuevaData = {
+                ruc: ruc,
+                razonSocial: response.data.razonSocial,
+                estado: response.data.estadoContribuyente || "ACTIVO",
+                mensaje: "Datos reales del SRI"
+            };
+
+            await new Consulta({ ruc, data: nuevaData }).save();
+            res.json({ source: 'SRI_LIVE', data: nuevaData });
+
+        } catch (axiosError) {
+            // Esto nos dirá en los LOGS de Render si es un bloqueo o un error de red
+            console.error("Detalle del error:", axiosError.response ? axiosError.response.status : axiosError.message);
+            return res.status(500).json({ 
+                error: 'El SRI bloqueó la conexión o está fuera de servicio.',
+                detalle: axiosError.message 
+            });
         }
 
         // Estructurar los datos reales
