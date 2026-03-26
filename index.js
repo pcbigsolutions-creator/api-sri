@@ -47,7 +47,7 @@ const validarApiKey = async (req, res, next) => {
     }
 };
 
-// 6. RUTA DE CONSULTA (VERSION ROBUSTA PARA EL SRI)
+// 6. RUTA DE CONSULTA CON PROXY (SALTA EL BLOQUEO DE RENDER)
 app.get('/api/ruc/:ruc', validarApiKey, async (req, res) => {
     const { ruc } = req.params;
 
@@ -56,42 +56,41 @@ app.get('/api/ruc/:ruc', validarApiKey, async (req, res) => {
         const cache = await Consulta.findOne({ ruc });
         if (cache) return res.json({ source: 'CACHE_LOCAL', data: cache.data });
 
-        // 2. Consultar al SRI (Ruta de Persona/obtenerPorRuc es más estable)
-        const url = `https://srienlinea.sri.gob.ec/sri-en-linea/rest/Persona/obtenerPorRuc?numeroRuc=${ruc}`;
+        // 2. Usar un Proxy para que el SRI no vea que venimos de Render (EE.UU.)
+        const urlSRI = `https://srienlinea.sri.gob.ec/sri-en-linea/rest/Persona/obtenerPorRuc?numeroRuc=${ruc}`;
+        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(urlSRI)}`;
         
-        const response = await axios.get(url, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'application/json, text/plain, */*',
-                'Origin': 'https://srienlinea.sri.gob.ec',
-                'Referer': 'https://srienlinea.sri.gob.ec/'
-            },
-            timeout: 8000
-        });
+        console.log(`Consultando RUC ${ruc} vía Proxy...`);
 
-        // Verificamos si hay datos reales
-        if (!response.data || (!response.data.razonSocial && !response.data.nombreCompleto)) {
-            return res.status(404).json({ error: 'RUC no encontrado o SRI bloqueó la conexión.' });
+        const proxyResponse = await axios.get(proxyUrl, { timeout: 10000 });
+        
+        // El proxy devuelve un string en 'contents', hay que convertirlo a objeto JSON
+        const dataReal = JSON.parse(proxyResponse.data.contents);
+
+        if (!dataReal || (!dataReal.razonSocial && !dataReal.nombreCompleto)) {
+            return res.status(404).json({ error: 'El RUC no devolvió datos válidos del SRI.' });
         }
 
-        // Algunos vienen como razonSocial y otros como nombreCompleto
-        const nombreFinal = response.data.razonSocial || response.data.nombreCompleto;
+        const nombreFinal = dataReal.razonSocial || dataReal.nombreCompleto;
 
         const nuevaData = {
             ruc: ruc,
             razonSocial: nombreFinal,
-            estado: response.data.estadoPersona || "ACTIVO",
-            mensaje: "Consulta exitosa - BIG SOLUTIONS PC"
+            estado: dataReal.estadoPersona || "ACTIVO",
+            mensaje: "Consulta exitosa vía Proxy - BIG SOLUTIONS PC"
         };
 
-        // 3. Guardar en BD para no volver a molestar al SRI con el mismo RUC
+        // 3. Guardar en BD para no repetir la consulta al Proxy
         await new Consulta({ ruc, data: nuevaData }).save();
 
-        res.json({ source: 'SRI_LIVE', data: nuevaData });
+        res.json({ source: 'SRI_LIVE_PROXY', data: nuevaData });
 
     } catch (error) {
-        console.error("Error en el servidor:", error.message);
-        res.status(500).json({ error: 'El SRI no responde. Intente de nuevo en unos segundos.' });
+        console.error("Error detallado:", error.message);
+        res.status(500).json({ 
+            error: 'El SRI sigue bloqueando la conexión o el Proxy falló.',
+            detalle: error.message 
+        });
     }
 });
 
@@ -117,5 +116,5 @@ app.post('/crear-usuario', async (req, res) => {
 // 7. ENCENDER EL SERVIDOR
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`🚀 Servidor de BIG SOLUTIONS activo en puerto ${PORT}`);
+    console.log(`🚀 Sistema de BIG SOLUTIONS PC activo en puerto ${PORT}`);
 });
