@@ -4,8 +4,8 @@ const mongoose = require('mongoose');
 const axios = require('axios');
 const cheerio = require('cheerio');
 
-const app = express();
-app.use(express.json());
+const cors = require('cors');
+app.use(express.json());app.use(cors());
 
 // 1. CONEXIÓN A MONGODB LOCAL
 mongoose.connect(process.env.MONGO_URI)
