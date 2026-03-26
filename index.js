@@ -59,7 +59,11 @@ app.get('/api/ruc/:ruc', validarApiKey, async (req, res) => {
 
         // 2. Consultar al SRI Real (Endpoint público oficial)
         const url = `https://srienlinea.sri.gob.ec/sri-en-linea/rest/ConsultasGenerales/obtenerPorRuc?numeroRuc=${ruc}`;
-        const response = await axios.get(url);
+       const response = await axios.get(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+        }); // <--- AQUÍ: fíjate que tiene el }); al final
         
         if (!response.data || !response.data.razonSocial) {
             return res.status(404).json({ error: 'RUC no encontrado en el SRI' });
