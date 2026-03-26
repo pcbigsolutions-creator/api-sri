@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Buscador RUC | BIG SOLUTIONS PC</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .container { background: #1e293b; padding: 2.5rem; border-radius: 16px; box-shadow: 0 20px 50px rgba(0,0,0,0.3); width: 90%; max-width: 450px; text-align: center; border: 1px solid #334155; }
+        h1 { color: #38bdf8; margin-bottom: 0.5rem; font-size: 1.8rem; }
+        p { color: #94a3b8; margin-bottom: 2rem; font-size: 0.9rem; }
+        input { width: 100%; padding: 14px; margin-bottom: 1.2rem; border: 2px solid #334155; border-radius: 8px; background: #0f172a; color: white; font-size: 1rem; outline: none; transition: 0.3s; box-sizing: border-box; }
+        input:focus { border-color: #38bdf8; box-shadow: 0 0 10px rgba(56, 189, 248, 0.2); }
+        button { width: 100%; padding: 14px; background: #38bdf8; color: #0f172a; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 1rem; transition: 0.3s; }
+        button:hover { background: #0ea5e9; transform: translateY(-2px); }
+        #loading { display: none; margin-top: 1rem; color: #38bdf8; font-style: italic; }
+        #resultado { margin-top: 2rem; text-align: left; display: none; padding: 15px; background: #334155; border-radius: 8px; border-left: 5px solid #38bdf8; animation: fadeIn 0.5s; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .label { color: #94a3b8; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; }
+        .data { display: block; font-size: 1.1rem; font-weight: 600; margin-bottom: 8px; color: #f8fafc; }
+        .footer { margin-top: 2rem; font-size: 0.7rem; color: #475569; letter-spacing: 2px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>BIG SOLUTIONS PC</h1>
+        <p>Consulta de RUC Oficial - SRI Ecuador</p>
+        
+        <input type="text" id="rucInput" placeholder="Ingrese RUC (13 dígitos)" maxlength="13">
+        <button id="btnConsultar" onclick="consultar()">BUSCAR AHORA</button>
+        
+        <div id="loading">Conectando con el servidor de BIG SOLUTIONS...</div>
+
+        <div id="resultado">
+            <span class="label">Razón Social:</span>
+            <span id="resNombre" class="data"></span>
+            
+            <span class="label">Estado en el SRI:</span>
+            <span id="resEstado" class="data"></span>
+        </div>
+
+        <div class="footer">POWERED BY BIG SOLUTIONS PC © 2026</div>
+    </div>
+
+    <script>
+        async function consultar() {
+            const ruc = document.getElementById('rucInput').value;
+            const resDiv = document.getElementById('resultado');
+            const loader = document.getElementById('loading');
+            const btn = document.getElementById('btnConsultar');
+
+            if (ruc.length < 13) {
+                alert("Por favor, ingrese un RUC válido de 13 dígitos.");
+                return;
+            }
+
+            // Mostrar carga
+            loader.style.display = 'block';
+            resDiv.style.display = 'none';
+            btn.disabled = true;
+
+            try {
+                // USA TU LINK DE RENDER AQUÍ
+                const response = await fetch(`https://api-sri.onrender.com/api/ruc/${ruc}`, {
+                    method: 'GET',
+                    headers: {
+                        'x-api-key': 'o8l1q1v3wgk' // <--- CAMBIA ESTO
+                    }
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    document.getElementById('resNombre').innerText = data.data.razonSocial;
+                    document.getElementById('resEstado').innerText = data.data.estado;
+                    resDiv.style.display = 'block';
+                } else {
+                    alert("Error: " + (data.error || "RUC no encontrado"));
+                }
+            } catch (err) {
+                alert("Servidor fuera de línea. Intente de nuevo en 30 segundos.");
+            } finally {
+                loader.style.display = 'none';
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
